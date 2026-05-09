@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import { supabase } from "@/lib/supabase";
 
 import {
   PieChart,
@@ -30,16 +31,17 @@ const COLORS = [
   "#14b8a6",
 ];
 
+type Expense = {
+  id?: number;
+  title: string;
+  amount: number;
+  category: string;
+  date: string;
+};
+
 export default function Home() {
 
-  const [expenses, setExpenses] = useState<
-    {
-      title: string;
-      amount: number;
-      category: string;
-      date: string;
-    }[]
-  >([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
 
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
@@ -56,15 +58,10 @@ export default function Home() {
 
   useEffect(() => {
 
-    const savedExpenses =
-      localStorage.getItem("expenses");
+    fetchExpenses();
 
     const savedIncome =
       localStorage.getItem("income");
-
-    if (savedExpenses) {
-      setExpenses(JSON.parse(savedExpenses));
-    }
 
     if (savedIncome) {
       setIncome(Number(savedIncome));
@@ -75,18 +72,37 @@ export default function Home() {
   useEffect(() => {
 
     localStorage.setItem(
-      "expenses",
-      JSON.stringify(expenses)
-    );
-
-    localStorage.setItem(
       "income",
       income.toString()
     );
 
-  }, [expenses, income]);
+  }, [income]);
 
-  const addExpense = () => {
+  const fetchExpenses = async () => {
+
+    const { data, error } =
+      await supabase
+        .from("expenses")
+        .select("*")
+        .order("id", { ascending: false });
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    const formattedExpenses =
+      data.map((expense: any) => ({
+        ...expense,
+        date: new Date(
+          expense.created_at
+        ).toLocaleDateString(),
+      }));
+
+    setExpenses(formattedExpenses);
+  };
+
+  const addExpense = async () => {
 
     if (!title || !amount) return;
 
@@ -94,42 +110,61 @@ export default function Home() {
       title,
       amount: Number(amount),
       category,
-      date: new Date().toLocaleDateString(),
     };
 
     if (editingIndex !== null) {
 
-      const updatedExpenses = [...expenses];
+      const expenseToEdit =
+        expenses[editingIndex];
 
-      updatedExpenses[editingIndex] =
-        expenseData;
+      const { error } = await supabase
+        .from("expenses")
+        .update(expenseData)
+        .eq("id", expenseToEdit.id);
 
-      setExpenses(updatedExpenses);
+      if (error) {
+        console.error(error);
+        return;
+      }
 
       setEditingIndex(null);
 
     } else {
 
-      setExpenses([
-        expenseData,
-        ...expenses,
-      ]);
+      const { error } = await supabase
+        .from("expenses")
+        .insert([expenseData]);
+
+      if (error) {
+        console.error(error);
+        return;
+      }
     }
+
+    await fetchExpenses();
 
     setTitle("");
     setAmount("");
     setCategory("Food");
   };
 
-  const deleteExpense = (
-    indexToDelete: number
+  const deleteExpense = async (
+    id?: number
   ) => {
 
-    const updatedExpenses = expenses.filter(
-      (_, index) => index !== indexToDelete
-    );
+    if (!id) return;
 
-    setExpenses(updatedExpenses);
+    const { error } = await supabase
+      .from("expenses")
+      .delete()
+      .eq("id", id);
+
+    if (error) {
+      console.error(error);
+      return;
+    }
+
+    await fetchExpenses();
   };
 
   const editExpense = (index: number) => {
@@ -162,21 +197,39 @@ export default function Home() {
         )
       : 0;
 
-  const categoryTotals = expenses.reduce(
-    (acc: any, expense) => {
+  const categoryTotals: {
+    name: string;
+    value: number;
+  }[] = expenses.reduce(
+    (
+      acc: {
+        name: string;
+        value: number;
+      }[],
+      expense
+    ) => {
 
       const existing = acc.find(
-        (item: any) =>
+        (
+          item: {
+            name: string;
+            value: number;
+          }
+        ) =>
           item.name === expense.category
       );
 
       if (existing) {
+
         existing.value += expense.amount;
+
       } else {
+
         acc.push({
           name: expense.category,
           value: expense.amount,
         });
+
       }
 
       return acc;
@@ -201,7 +254,8 @@ export default function Home() {
             filterCategory;
 
       return (
-        matchesSearch && matchesCategory
+        matchesSearch &&
+        matchesCategory
       );
     });
 
@@ -398,7 +452,13 @@ export default function Home() {
                   >
 
                     {categoryTotals.map(
-                     (entry: any, index: number) => (
+                      (
+                        entry: {
+                          name: string;
+                          value: number;
+                        },
+                        index: number
+                      ) => (
 
                         <Cell
                           key={index}
@@ -526,7 +586,9 @@ export default function Home() {
 
                       <button
                         onClick={() =>
-                          deleteExpense(index)
+                          deleteExpense(
+                            expense.id
+                          )
                         }
                         className="bg-red-500 p-2 rounded-lg hover:scale-110 transition"
                       >
