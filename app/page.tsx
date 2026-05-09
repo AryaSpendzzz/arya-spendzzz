@@ -2,7 +2,6 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { supabase } from "@/lib/supabase";
-
 import {
   PieChart,
   Pie,
@@ -12,9 +11,6 @@ import {
 } from "recharts";
 
 import {
-  Wallet,
-  TrendingDown,
-  PiggyBank,
   Trash2,
   IndianRupee,
   Search,
@@ -31,17 +27,11 @@ const COLORS = [
   "#14b8a6",
 ];
 
-type Expense = {
-  id?: number;
-  title: string;
-  amount: number;
-  category: string;
-  date: string;
-};
-
 export default function Home() {
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [user, setUser] = useState<any>(null);
+
+  const [expenses, setExpenses] = useState<any[]>([]);
 
   const [title, setTitle] = useState("");
   const [amount, setAmount] = useState("");
@@ -53,123 +43,136 @@ export default function Home() {
   const [filterCategory, setFilterCategory] =
     useState("All");
 
-  const [editingIndex, setEditingIndex] =
+  const [editingId, setEditingId] =
     useState<number | null>(null);
+
+  const [email, setEmail] = useState("");
+  const [password, setPassword] = useState("");
 
   useEffect(() => {
 
-    fetchExpenses();
-
-    const savedIncome =
-      localStorage.getItem("income");
-
-    if (savedIncome) {
-      setIncome(Number(savedIncome));
-    }
+    checkUser();
 
   }, []);
 
-  useEffect(() => {
+  async function checkUser() {
 
-    localStorage.setItem(
-      "income",
-      income.toString()
-    );
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
-  }, [income]);
+    setUser(user);
 
-  const fetchExpenses = async () => {
+    if (user) {
+      fetchExpenses(user.id);
+    }
+  }
+
+  async function signUp() {
+
+    const { error } =
+      await supabase.auth.signUp({
+        email,
+        password,
+      });
+
+    if (error) {
+      alert(error.message);
+    } else {
+      alert("Signup successful");
+    }
+  }
+
+  async function signIn() {
+
+    const { error } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+    if (error) {
+      alert(error.message);
+    } else {
+      checkUser();
+    }
+  }
+
+  async function signOut() {
+
+    await supabase.auth.signOut();
+
+    setUser(null);
+
+    setExpenses([]);
+  }
+
+  async function fetchExpenses(userId: string) {
 
     const { data, error } =
       await supabase
         .from("expenses")
         .select("*")
+        .eq("user_id", userId)
         .order("id", { ascending: false });
 
-    if (error) {
-      console.error(error);
-      return;
+    if (!error && data) {
+      setExpenses(data);
     }
+  }
 
-    const formattedExpenses =
-      data.map((expense: any) => ({
-        ...expense,
-        date: new Date(
-          expense.created_at
-        ).toLocaleDateString(),
-      }));
-
-    setExpenses(formattedExpenses);
-  };
-
-  const addExpense = async () => {
+  async function addExpense() {
 
     if (!title || !amount) return;
 
-    const expenseData = {
-      title,
-      amount: Number(amount),
-      category,
-    };
+    if (!user) return;
 
-    if (editingIndex !== null) {
+    if (editingId !== null) {
 
-      const expenseToEdit =
-        expenses[editingIndex];
-
-      const { error } = await supabase
+      await supabase
         .from("expenses")
-        .update(expenseData)
-        .eq("id", expenseToEdit.id);
+        .update({
+          title,
+          amount: Number(amount),
+          category,
+        })
+        .eq("id", editingId);
 
-      if (error) {
-        console.error(error);
-        return;
-      }
-
-      setEditingIndex(null);
+      setEditingId(null);
 
     } else {
 
-      const { error } = await supabase
+      await supabase
         .from("expenses")
-        .insert([expenseData]);
-
-      if (error) {
-        console.error(error);
-        return;
-      }
+        .insert([
+          {
+            title,
+            amount: Number(amount),
+            category,
+            date: new Date().toLocaleDateString(),
+            user_id: user.id,
+          },
+        ]);
     }
 
-    await fetchExpenses();
+    fetchExpenses(user.id);
 
     setTitle("");
     setAmount("");
     setCategory("Food");
-  };
+  }
 
-  const deleteExpense = async (
-    id?: number
-  ) => {
+  async function deleteExpense(id: number) {
 
-    if (!id) return;
-
-    const { error } = await supabase
+    await supabase
       .from("expenses")
       .delete()
       .eq("id", id);
 
-    if (error) {
-      console.error(error);
-      return;
-    }
+    fetchExpenses(user.id);
+  }
 
-    await fetchExpenses();
-  };
-
-  const editExpense = (index: number) => {
-
-    const expense = expenses[index];
+  function editExpense(expense: any) {
 
     setTitle(expense.title);
 
@@ -177,8 +180,8 @@ export default function Home() {
 
     setCategory(expense.category);
 
-    setEditingIndex(index);
-  };
+    setEditingId(expense.id);
+  }
 
   const totalExpenses = expenses.reduce(
     (total, expense) =>
@@ -197,39 +200,21 @@ export default function Home() {
         )
       : 0;
 
-  const categoryTotals: {
-    name: string;
-    value: number;
-  }[] = expenses.reduce(
-    (
-      acc: {
-        name: string;
-        value: number;
-      }[],
-      expense
-    ) => {
+  const categoryTotals = expenses.reduce(
+    (acc: any, expense) => {
 
       const existing = acc.find(
-        (
-          item: {
-            name: string;
-            value: number;
-          }
-        ) =>
+        (item: any) =>
           item.name === expense.category
       );
 
       if (existing) {
-
         existing.value += expense.amount;
-
       } else {
-
         acc.push({
           name: expense.category,
           value: expense.amount,
         });
-
       }
 
       return acc;
@@ -254,8 +239,7 @@ export default function Home() {
             filterCategory;
 
       return (
-        matchesSearch &&
-        matchesCategory
+        matchesSearch && matchesCategory
       );
     });
 
@@ -265,13 +249,69 @@ export default function Home() {
     filterCategory,
   ]);
 
+  if (!user) {
+
+    return (
+
+      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+
+        <div className="bg-zinc-900 p-8 rounded-3xl w-full max-w-md border border-zinc-800">
+
+          <h1 className="text-4xl font-black mb-8 text-center">
+            Arya Spendzzz
+          </h1>
+
+          <div className="space-y-4">
+
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) =>
+                setEmail(e.target.value)
+              }
+              className="w-full bg-zinc-800 p-4 rounded-xl outline-none"
+            />
+
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) =>
+                setPassword(e.target.value)
+              }
+              className="w-full bg-zinc-800 p-4 rounded-xl outline-none"
+            />
+
+            <button
+              onClick={signIn}
+              className="w-full bg-white text-black p-4 rounded-xl font-bold"
+            >
+              Login
+            </button>
+
+            <button
+              onClick={signUp}
+              className="w-full bg-green-500 p-4 rounded-xl font-bold"
+            >
+              Create Account
+            </button>
+
+          </div>
+
+        </div>
+
+      </main>
+    );
+  }
+
   return (
 
     <main className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-zinc-900 text-white p-8">
 
       <div className="max-w-7xl mx-auto">
 
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-10">
+        <div className="flex justify-between items-center mb-10">
 
           <div>
 
@@ -285,30 +325,12 @@ export default function Home() {
 
           </div>
 
-          <div className="mt-6 md:mt-0">
-
-            <label className="text-zinc-400 block mb-2">
-              Monthly Income
-            </label>
-
-            <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-4 py-3 rounded-2xl">
-
-              <IndianRupee size={18} />
-
-              <input
-                type="number"
-                value={income}
-                onChange={(e) =>
-                  setIncome(
-                    Number(e.target.value)
-                  )
-                }
-                className="bg-transparent outline-none text-xl font-bold w-[150px]"
-              />
-
-            </div>
-
-          </div>
+          <button
+            onClick={signOut}
+            className="bg-red-500 px-5 py-3 rounded-xl font-bold"
+          >
+            Logout
+          </button>
 
         </div>
 
@@ -368,7 +390,7 @@ export default function Home() {
 
           <h2 className="text-2xl font-bold mb-6">
 
-            {editingIndex !== null
+            {editingId !== null
               ? "Edit Expense"
               : "Add Expense"}
 
@@ -416,7 +438,7 @@ export default function Home() {
               className="bg-white text-black rounded-xl font-bold hover:scale-105 transition"
             >
 
-              {editingIndex !== null
+              {editingId !== null
                 ? "Update Expense"
                 : "Add Expense"}
 
@@ -453,10 +475,7 @@ export default function Home() {
 
                     {categoryTotals.map(
                       (
-                        entry: {
-                          name: string;
-                          value: number;
-                        },
+                        entry: any,
                         index: number
                       ) => (
 
@@ -577,7 +596,7 @@ export default function Home() {
 
                       <button
                         onClick={() =>
-                          editExpense(index)
+                          editExpense(expense)
                         }
                         className="bg-blue-500 p-2 rounded-lg hover:scale-110 transition"
                       >
