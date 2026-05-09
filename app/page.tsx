@@ -398,7 +398,7 @@ export default function Home() {
                   >
 
                     {categoryTotals.map(
-                      (entry, index) => (
+                     (entry: any, index: number) => (
 
                         <Cell
                           key={index}
