@@ -10,14 +10,11 @@ import {
   Cell,
   Tooltip,
   ResponsiveContainer,
-  BarChart,
-  XAxis,
-  YAxis,
-  Bar,
-  CartesianGrid,
 } from "recharts";
 
-import toast, { Toaster } from "react-hot-toast";
+import toast, {
+  Toaster,
+} from "react-hot-toast";
 
 import {
   Trash2,
@@ -37,30 +34,25 @@ const COLORS = [
   "#14b8a6",
 ];
 
-type Expense = {
-  id?: number;
-  title: string;
-  amount: number;
-  category: string;
-  date: string;
-};
-
 export default function Home() {
 
-  const [expenses, setExpenses] = useState<Expense[]>([]);
+  const [user, setUser] =
+    useState<any>(null);
 
-  const [title, setTitle] = useState("");
+  const [expenses, setExpenses] =
+    useState<any[]>([]);
 
-  const [amount, setAmount] = useState("");
+  const [title, setTitle] =
+    useState("");
+
+  const [amount, setAmount] =
+    useState("");
 
   const [category, setCategory] =
     useState("Food");
 
   const [income, setIncome] =
-    useState(50000);
-
-  const [budget, setBudget] =
-    useState(20000);
+    useState(0);
 
   const [search, setSearch] =
     useState("");
@@ -71,140 +63,231 @@ export default function Home() {
   const [editingId, setEditingId] =
     useState<number | null>(null);
 
-  const [loading, setLoading] =
-    useState(true);
+  const [email, setEmail] =
+    useState("");
+
+  const [password, setPassword] =
+    useState("");
 
   useEffect(() => {
 
-    fetchExpenses();
+    checkUser();
 
   }, []);
 
-  const fetchExpenses = async () => {
-
-    setLoading(true);
+  async function checkUser() {
 
     const {
-      data,
-      error,
-    } = await supabase
-      .from("expenses")
-      .select("*")
-      .order("id", {
-        ascending: false,
+      data: { user },
+    } = await supabase.auth.getUser();
+
+    setUser(user);
+
+    if (user) {
+
+      fetchExpenses(user.id);
+
+      const { data } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      if (data) {
+
+        setIncome(data.income);
+
+      } else {
+
+        await supabase
+          .from("profiles")
+          .insert([
+            {
+              id: user.id,
+              income: 0,
+            },
+          ]);
+      }
+    }
+  }
+
+  async function signUp() {
+
+    const { error } =
+      await supabase.auth.signUp({
+        email,
+        password,
       });
 
     if (error) {
 
-      toast.error("Failed to load expenses");
+      toast.error(error.message);
 
     } else {
 
-      setExpenses(data || []);
-
+      toast.success(
+        "Account created"
+      );
     }
+  }
 
-    setLoading(false);
-  };
+  async function signIn() {
 
-  const addExpense = async () => {
+    const { error } =
+      await supabase.auth.signInWithPassword({
+        email,
+        password,
+      });
+
+    if (error) {
+
+      toast.error(error.message);
+
+    } else {
+
+      checkUser();
+
+      toast.success("Logged in");
+    }
+  }
+
+  async function signOut() {
+
+    await supabase.auth.signOut();
+
+    setUser(null);
+
+    setExpenses([]);
+  }
+
+  async function fetchExpenses(
+    userId: string
+  ) {
+
+    const { data, error } =
+      await supabase
+        .from("expenses")
+        .select("*")
+        .eq("user_id", userId)
+        .order("id", {
+          ascending: false,
+        });
+
+    if (!error && data) {
+
+      setExpenses(data);
+    }
+  }
+
+  async function addExpense() {
 
     if (!title || !amount) {
 
-      toast.error("Fill all fields");
+      toast.error(
+        "Fill all fields"
+      );
 
       return;
     }
+
+    if (!user) return;
 
     const expenseData = {
       title,
       amount: Number(amount),
       category,
       date: new Date().toLocaleDateString(),
+      user_id: user.id,
     };
 
     if (editingId !== null) {
 
-      const { error } = await supabase
-        .from("expenses")
-        .update(expenseData)
-        .eq("id", editingId);
+      const { error } =
+        await supabase
+          .from("expenses")
+          .update(expenseData)
+          .eq("id", editingId);
 
       if (error) {
 
-        toast.error("Update failed");
+        toast.error(
+          "Update failed"
+        );
 
       } else {
 
-        toast.success("Expense updated");
-
+        toast.success(
+          "Expense updated"
+        );
       }
 
       setEditingId(null);
 
     } else {
 
-      const { error } = await supabase
-        .from("expenses")
-        .insert([expenseData]);
+      const { error } =
+        await supabase
+          .from("expenses")
+          .insert([expenseData]);
 
       if (error) {
 
-        toast.error("Insert failed");
+        toast.error(
+          "Insert failed"
+        );
 
       } else {
 
-        toast.success("Expense added");
-
+        toast.success(
+          "Expense added"
+        );
       }
     }
+
+    fetchExpenses(user.id);
 
     setTitle("");
     setAmount("");
     setCategory("Food");
+  }
 
-    fetchExpenses();
-  };
-
-  const deleteExpense = async (
+  async function deleteExpense(
     id: number
-  ) => {
+  ) {
 
-    const { error } = await supabase
+    await supabase
       .from("expenses")
       .delete()
       .eq("id", id);
 
-    if (error) {
+    fetchExpenses(user.id);
 
-      toast.error("Delete failed");
+    toast.success(
+      "Expense deleted"
+    );
+  }
 
-    } else {
-
-      toast.success("Expense deleted");
-
-      fetchExpenses();
-    }
-  };
-
-  const editExpense = (
-    expense: Expense
-  ) => {
+  function editExpense(
+    expense: any
+  ) {
 
     setTitle(expense.title);
 
-    setAmount(expense.amount.toString());
+    setAmount(
+      expense.amount.toString()
+    );
 
     setCategory(expense.category);
 
-    setEditingId(expense.id || null);
-  };
+    setEditingId(expense.id);
+  }
 
-  const totalExpenses = expenses.reduce(
-    (total, expense) =>
-      total + expense.amount,
-    0
-  );
+  const totalExpenses =
+    expenses.reduce(
+      (total, expense) =>
+        total + expense.amount,
+      0
+    );
 
   const savings =
     income - totalExpenses;
@@ -213,65 +296,77 @@ export default function Home() {
     expenses.length > 0
       ? Math.max(
           ...expenses.map(
-            (expense) => expense.amount
+            (expense) =>
+              expense.amount
           )
         )
       : 0;
 
-  const categoryTotals = expenses.reduce(
-    (acc: any, expense) => {
+  const categoryTotals =
+    expenses.reduce(
+      (acc: any, expense) => {
 
-      const existing = acc.find(
-        (item: any) =>
-          item.name === expense.category
+        const existing = acc.find(
+          (item: any) =>
+            item.name ===
+            expense.category
+        );
+
+        if (existing) {
+
+          existing.value +=
+            expense.amount;
+
+        } else {
+
+          acc.push({
+            name:
+              expense.category,
+            value:
+              expense.amount,
+          });
+        }
+
+        return acc;
+
+      },
+      []
+    );
+
+  const filteredExpenses =
+    useMemo(() => {
+
+      return expenses.filter(
+        (expense) => {
+
+          const matchesSearch =
+            expense.title
+              .toLowerCase()
+              .includes(
+                search.toLowerCase()
+              );
+
+          const matchesCategory =
+            filterCategory ===
+            "All"
+              ? true
+              : expense.category ===
+                filterCategory;
+
+          return (
+            matchesSearch &&
+            matchesCategory
+          );
+        }
       );
 
-      if (existing) {
+    }, [
+      expenses,
+      search,
+      filterCategory,
+    ]);
 
-        existing.value += expense.amount;
-
-      } else {
-
-        acc.push({
-          name: expense.category,
-          value: expense.amount,
-        });
-      }
-
-      return acc;
-
-    },
-    []
-  );
-
-  const filteredExpenses = useMemo(() => {
-
-    return expenses.filter((expense) => {
-
-      const matchesSearch =
-        expense.title
-          .toLowerCase()
-          .includes(search.toLowerCase());
-
-      const matchesCategory =
-        filterCategory === "All"
-          ? true
-          : expense.category ===
-            filterCategory;
-
-      return (
-        matchesSearch &&
-        matchesCategory
-      );
-    });
-
-  }, [
-    expenses,
-    search,
-    filterCategory,
-  ]);
-
-  const exportCSV = () => {
+  function exportCSV() {
 
     const headers =
       "Title,Amount,Category,Date\n";
@@ -283,104 +378,187 @@ export default function Home() {
       )
       .join("\n");
 
-    const csvContent =
-      headers + rows;
-
     const blob = new Blob(
-      [csvContent],
+      [headers + rows],
       {
         type: "text/csv",
       }
     );
 
     const url =
-      window.URL.createObjectURL(blob);
+      window.URL.createObjectURL(
+        blob
+      );
 
     const a =
       document.createElement("a");
 
     a.href = url;
 
-    a.download = "expenses.csv";
+    a.download =
+      "expenses.csv";
 
     a.click();
 
-    toast.success("CSV exported");
-  };
+    toast.success(
+      "CSV exported"
+    );
+  }
+
+  if (!user) {
+
+    return (
+
+      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+
+        <Toaster />
+
+        <div className="bg-zinc-900 p-8 rounded-3xl w-full max-w-md border border-zinc-800">
+
+          <h1 className="text-4xl font-black mb-8 text-center">
+
+            Arya Spendzzz
+
+          </h1>
+
+          <div className="space-y-4">
+
+            <input
+              type="email"
+              placeholder="Email"
+              value={email}
+              onChange={(e) =>
+                setEmail(
+                  e.target.value
+                )
+              }
+              className="w-full bg-zinc-800 p-4 rounded-xl outline-none"
+            />
+
+            <input
+              type="password"
+              placeholder="Password"
+              value={password}
+              onChange={(e) =>
+                setPassword(
+                  e.target.value
+                )
+              }
+              className="w-full bg-zinc-800 p-4 rounded-xl outline-none"
+            />
+
+            <button
+              onClick={signIn}
+              className="w-full bg-white text-black p-4 rounded-xl font-bold"
+            >
+              Login
+            </button>
+
+            <button
+              onClick={signUp}
+              className="w-full bg-green-500 p-4 rounded-xl font-bold"
+            >
+              Create Account
+            </button>
+
+          </div>
+
+        </div>
+
+      </main>
+    );
+  }
 
   return (
 
     <main className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-zinc-900 text-white p-4 md:p-8">
 
-      <Toaster position="top-right" />
+      <Toaster />
 
       <div className="max-w-7xl mx-auto">
 
-        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-10 gap-6">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-6 mb-10">
 
           <div>
 
-            <h1 className="text-4xl md:text-5xl font-black mb-2">
+            <h1 className="text-5xl font-black mb-2">
+
               Arya Spendzzz
+
             </h1>
 
             <p className="text-zinc-400">
+
               Smart Personal Finance Dashboard
+
             </p>
 
           </div>
 
-          <div className="flex flex-col md:flex-row gap-4">
+          <div className="flex gap-4">
 
-            <div>
+            <button
+              onClick={exportCSV}
+              className="bg-green-500 px-5 py-3 rounded-xl font-bold flex items-center gap-2"
+            >
 
-              <label className="text-zinc-400 block mb-2">
-                Monthly Income
-              </label>
+              <Download size={18} />
 
-              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-4 py-3 rounded-2xl">
+              Export CSV
 
-                <IndianRupee size={18} />
+            </button>
 
-                <input
-                  type="number"
-                  value={income}
-                  onChange={(e) =>
-                    setIncome(
-                      Number(e.target.value)
-                    )
-                  }
-                  className="bg-transparent outline-none text-xl font-bold w-[120px]"
-                />
+            <button
+              onClick={signOut}
+              className="bg-red-500 px-5 py-3 rounded-xl font-bold"
+            >
+              Logout
+            </button>
 
-              </div>
+          </div>
 
-            </div>
+        </div>
 
-            <div>
+        <div className="mb-10">
 
-              <label className="text-zinc-400 block mb-2">
-                Monthly Budget
-              </label>
+          <label className="text-zinc-400 block mb-3">
 
-              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-4 py-3 rounded-2xl">
+            Monthly Income
 
-                <IndianRupee size={18} />
+          </label>
 
-                <input
-                  type="number"
-                  value={budget}
-                  onChange={(e) =>
-                    setBudget(
-                      Number(e.target.value)
-                    )
-                  }
-                  className="bg-transparent outline-none text-xl font-bold w-[120px]"
-                />
+          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-4 py-3 rounded-2xl max-w-sm">
 
-              </div>
+            <IndianRupee size={18} />
 
-            </div>
+            <input
+              type="number"
+              value={income}
+              onChange={async (
+                e
+              ) => {
+
+                const value =
+                  Number(
+                    e.target.value
+                  );
+
+                setIncome(value);
+
+                await supabase
+                  .from(
+                    "profiles"
+                  )
+                  .update({
+                    income: value,
+                  })
+                  .eq(
+                    "id",
+                    user.id
+                  );
+              }}
+              className="bg-transparent outline-none text-xl font-bold w-full"
+            />
 
           </div>
 
@@ -414,42 +592,41 @@ export default function Home() {
 
         </div>
 
-        <div className="mb-8">
+        <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl mb-10">
 
-          <div className="w-full bg-zinc-800 rounded-full h-4 overflow-hidden">
+          <div className="flex flex-col md:flex-row gap-4 mb-6">
 
-            <div
-              className={`h-full ${
-                totalExpenses > budget
-                  ? "bg-red-500"
-                  : "bg-green-500"
-              }`}
-              style={{
-                width: `${Math.min(
-                  (totalExpenses / budget) *
-                    100,
-                  100
-                )}%`,
-              }}
+            <input
+              type="text"
+              placeholder="Search expense"
+              value={search}
+              onChange={(e) =>
+                setSearch(
+                  e.target.value
+                )
+              }
+              className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl outline-none w-full"
             />
 
+            <select
+              value={filterCategory}
+              onChange={(e) =>
+                setFilterCategory(
+                  e.target.value
+                )
+              }
+              className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl outline-none"
+            >
+              <option>All</option>
+              <option>Food</option>
+              <option>Travel</option>
+              <option>Shopping</option>
+              <option>Bills</option>
+              <option>Entertainment</option>
+              <option>Health</option>
+            </select>
+
           </div>
-
-          <p className="text-zinc-400 mt-2">
-
-            Budget Used:
-            {" "}
-            ₹{totalExpenses}
-            {" "}
-            /
-            {" "}
-            ₹{budget}
-
-          </p>
-
-        </div>
-
-        <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl mb-10">
 
           <h2 className="text-2xl font-bold mb-6">
 
@@ -466,7 +643,9 @@ export default function Home() {
               placeholder="Expense title"
               value={title}
               onChange={(e) =>
-                setTitle(e.target.value)
+                setTitle(
+                  e.target.value
+                )
               }
               className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl outline-none"
             />
@@ -476,7 +655,9 @@ export default function Home() {
               placeholder="Amount"
               value={amount}
               onChange={(e) =>
-                setAmount(e.target.value)
+                setAmount(
+                  e.target.value
+                )
               }
               className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl outline-none"
             />
@@ -484,7 +665,9 @@ export default function Home() {
             <select
               value={category}
               onChange={(e) =>
-                setCategory(e.target.value)
+                setCategory(
+                  e.target.value
+                )
               }
               className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl outline-none"
             >
@@ -498,12 +681,12 @@ export default function Home() {
 
             <button
               onClick={addExpense}
-              className="bg-white text-black rounded-xl font-bold hover:scale-105 transition"
+              className="bg-white text-black rounded-xl font-bold"
             >
 
               {editingId !== null
-                ? "Update Expense"
-                : "Add Expense"}
+                ? "Update"
+                : "Add"}
 
             </button>
 
@@ -516,7 +699,9 @@ export default function Home() {
           <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
 
             <h2 className="text-2xl font-bold mb-6">
-              Expense Analytics
+
+              Analytics
+
             </h2>
 
             <div className="h-[350px]">
@@ -570,140 +755,35 @@ export default function Home() {
           <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
 
             <h2 className="text-2xl font-bold mb-6">
-              Expense Breakdown
-            </h2>
 
-            <div className="h-[350px]">
-
-              <ResponsiveContainer
-                width="100%"
-                height="100%"
-              >
-
-                <BarChart
-                  data={categoryTotals}
-                >
-
-                  <CartesianGrid
-                    strokeDasharray="3 3"
-                  />
-
-                  <XAxis dataKey="name" />
-
-                  <YAxis />
-
-                  <Tooltip />
-
-                  <Bar
-                    dataKey="value"
-                    fill="#3b82f6"
-                  />
-
-                </BarChart>
-
-              </ResponsiveContainer>
-
-            </div>
-
-          </div>
-
-        </div>
-
-        <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
-
-          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
-
-            <h2 className="text-2xl font-bold">
               Recent Expenses
+
             </h2>
 
-            <div className="flex flex-col md:flex-row gap-3">
+            <div className="space-y-4 max-h-[400px] overflow-auto">
 
-              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-3 rounded-xl">
-
-                <Search size={18} />
-
-                <input
-                  type="text"
-                  placeholder="Search"
-                  value={search}
-                  onChange={(e) =>
-                    setSearch(
-                      e.target.value
-                    )
-                  }
-                  className="bg-transparent outline-none py-2"
-                />
-
-              </div>
-
-              <select
-                value={filterCategory}
-                onChange={(e) =>
-                  setFilterCategory(
-                    e.target.value
-                  )
-                }
-                className="bg-zinc-900 border border-zinc-700 px-3 rounded-xl"
-              >
-                <option>All</option>
-                <option>Food</option>
-                <option>Travel</option>
-                <option>Shopping</option>
-                <option>Bills</option>
-                <option>Entertainment</option>
-                <option>Health</option>
-              </select>
-
-              <button
-                onClick={exportCSV}
-                className="bg-green-500 px-4 rounded-xl font-bold flex items-center gap-2"
-              >
-
-                <Download size={18} />
-
-                Export
-
-              </button>
-
-            </div>
-
-          </div>
-
-          <div className="space-y-4 max-h-[500px] overflow-auto pr-2">
-
-            {loading ? (
-
-              <p className="text-zinc-400">
-                Loading...
-              </p>
-
-            ) : filteredExpenses.length === 0 ? (
-
-              <p className="text-zinc-500">
-                No expenses found
-              </p>
-
-            ) : (
-
-              filteredExpenses.map(
+              {filteredExpenses.map(
                 (expense) => (
 
                   <div
                     key={expense.id}
-                    className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 bg-zinc-900/70 border border-zinc-800 p-4 rounded-2xl"
+                    className="flex justify-between items-center bg-zinc-900/70 border border-zinc-800 p-4 rounded-2xl"
                   >
 
                     <div>
 
                       <p className="text-lg font-semibold">
+
                         {expense.title}
+
                       </p>
 
                       <div className="flex items-center gap-3 text-sm text-zinc-400 mt-1">
 
                         <span>
+
                           {expense.category}
+
                         </span>
 
                         <span className="flex items-center gap-1">
@@ -721,14 +801,18 @@ export default function Home() {
                     <div className="flex items-center gap-3">
 
                       <p className="text-red-400 font-bold text-lg">
+
                         ₹{expense.amount}
+
                       </p>
 
                       <button
                         onClick={() =>
-                          editExpense(expense)
+                          editExpense(
+                            expense
+                          )
                         }
-                        className="bg-blue-500 p-2 rounded-lg hover:scale-110 transition"
+                        className="bg-blue-500 p-2 rounded-lg"
                       >
                         <Pencil size={16} />
                       </button>
@@ -736,10 +820,10 @@ export default function Home() {
                       <button
                         onClick={() =>
                           deleteExpense(
-                            expense.id || 0
+                            expense.id
                           )
                         }
-                        className="bg-red-500 p-2 rounded-lg hover:scale-110 transition"
+                        className="bg-red-500 p-2 rounded-lg"
                       >
                         <Trash2 size={16} />
                       </button>
@@ -749,9 +833,9 @@ export default function Home() {
                   </div>
 
                 )
-              )
+              )}
 
-            )}
+            </div>
 
           </div>
 
@@ -778,11 +862,15 @@ function Card({
     <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
 
       <h2 className="text-zinc-400 mb-3">
+
         {title}
+
       </h2>
 
       <p className={`text-4xl font-black ${color}`}>
+
         ₹{value}
+
       </p>
 
     </div>
