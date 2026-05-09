@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+
 import { supabase } from "@/lib/supabase";
 
 import {
@@ -9,7 +10,14 @@ import {
   Cell,
   Tooltip,
   ResponsiveContainer,
+  BarChart,
+  XAxis,
+  YAxis,
+  Bar,
+  CartesianGrid,
 } from "recharts";
+
+import toast, { Toaster } from "react-hot-toast";
 
 import {
   Trash2,
@@ -17,6 +25,7 @@ import {
   Search,
   Pencil,
   Calendar,
+  Download,
 } from "lucide-react";
 
 const COLORS = [
@@ -28,21 +37,33 @@ const COLORS = [
   "#14b8a6",
 ];
 
+type Expense = {
+  id?: number;
+  title: string;
+  amount: number;
+  category: string;
+  date: string;
+};
+
 export default function Home() {
 
-  const [user, setUser] = useState<any>(null);
-
-  const [expenses, setExpenses] =
-    useState<any[]>([]);
+  const [expenses, setExpenses] = useState<Expense[]>([]);
 
   const [title, setTitle] = useState("");
+
   const [amount, setAmount] = useState("");
+
   const [category, setCategory] =
     useState("Food");
 
-  const [income, setIncome] = useState(0);
+  const [income, setIncome] =
+    useState(50000);
 
-  const [search, setSearch] = useState("");
+  const [budget, setBudget] =
+    useState(20000);
+
+  const [search, setSearch] =
+    useState("");
 
   const [filterCategory, setFilterCategory] =
     useState("All");
@@ -50,185 +71,140 @@ export default function Home() {
   const [editingId, setEditingId] =
     useState<number | null>(null);
 
-  const [email, setEmail] = useState("");
-
-  const [password, setPassword] =
-    useState("");
+  const [loading, setLoading] =
+    useState(true);
 
   useEffect(() => {
 
-    checkUser();
+    fetchExpenses();
 
   }, []);
 
-  async function checkUser() {
+  const fetchExpenses = async () => {
+
+    setLoading(true);
 
     const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    setUser(user);
-
-    if (user) {
-
-      fetchExpenses(user.id);
-
-      const { data } = await supabase
-        .from("profiles")
-        .select("*")
-        .eq("id", user.id)
-        .single();
-
-      if (data) {
-
-        setIncome(data.income);
-
-      } else {
-
-        await supabase
-          .from("profiles")
-          .insert([
-            {
-              id: user.id,
-              income: 0,
-            },
-          ]);
-      }
-    }
-  }
-
-  async function signUp() {
-
-    const { error } =
-      await supabase.auth.signUp({
-        email,
-        password,
+      data,
+      error,
+    } = await supabase
+      .from("expenses")
+      .select("*")
+      .order("id", {
+        ascending: false,
       });
 
     if (error) {
 
-      alert(error.message);
+      toast.error("Failed to load expenses");
 
     } else {
 
-      alert("Account created");
+      setExpenses(data || []);
+
     }
-  }
 
-  async function signIn() {
+    setLoading(false);
+  };
 
-    const { error } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+  const addExpense = async () => {
 
-    if (error) {
+    if (!title || !amount) {
 
-      alert(error.message);
+      toast.error("Fill all fields");
 
-    } else {
-
-      checkUser();
+      return;
     }
-  }
 
-  async function signOut() {
-
-    await supabase.auth.signOut();
-
-    setUser(null);
-
-    setExpenses([]);
-  }
-
-  async function fetchExpenses(userId: string) {
-
-    const { data, error } =
-      await supabase
-        .from("expenses")
-        .select("*")
-        .eq("user_id", userId)
-        .order("id", {
-          ascending: false,
-        });
-
-    if (!error && data) {
-
-      setExpenses(data);
-    }
-  }
-
-  async function addExpense() {
-
-    if (!title || !amount) return;
-
-    if (!user) return;
+    const expenseData = {
+      title,
+      amount: Number(amount),
+      category,
+      date: new Date().toLocaleDateString(),
+    };
 
     if (editingId !== null) {
 
-      await supabase
+      const { error } = await supabase
         .from("expenses")
-        .update({
-          title,
-          amount: Number(amount),
-          category,
-        })
+        .update(expenseData)
         .eq("id", editingId);
+
+      if (error) {
+
+        toast.error("Update failed");
+
+      } else {
+
+        toast.success("Expense updated");
+
+      }
 
       setEditingId(null);
 
     } else {
 
-      await supabase
+      const { error } = await supabase
         .from("expenses")
-        .insert([
-          {
-            title,
-            amount: Number(amount),
-            category,
-            date: new Date().toLocaleDateString(),
-            user_id: user.id,
-          },
-        ]);
-    }
+        .insert([expenseData]);
 
-    fetchExpenses(user.id);
+      if (error) {
+
+        toast.error("Insert failed");
+
+      } else {
+
+        toast.success("Expense added");
+
+      }
+    }
 
     setTitle("");
     setAmount("");
     setCategory("Food");
-  }
 
-  async function deleteExpense(id: number) {
+    fetchExpenses();
+  };
 
-    await supabase
+  const deleteExpense = async (
+    id: number
+  ) => {
+
+    const { error } = await supabase
       .from("expenses")
       .delete()
       .eq("id", id);
 
-    fetchExpenses(user.id);
-  }
+    if (error) {
 
-  function editExpense(expense: any) {
+      toast.error("Delete failed");
+
+    } else {
+
+      toast.success("Expense deleted");
+
+      fetchExpenses();
+    }
+  };
+
+  const editExpense = (
+    expense: Expense
+  ) => {
 
     setTitle(expense.title);
 
-    setAmount(
-      expense.amount.toString()
-    );
+    setAmount(expense.amount.toString());
 
     setCategory(expense.category);
 
-    setEditingId(expense.id);
-  }
+    setEditingId(expense.id || null);
+  };
 
-  const totalExpenses =
-    expenses.reduce(
-      (total, expense) =>
-        total + expense.amount,
-      0
-    );
+  const totalExpenses = expenses.reduce(
+    (total, expense) =>
+      total + expense.amount,
+    0
+  );
 
   const savings =
     income - totalExpenses;
@@ -237,205 +213,174 @@ export default function Home() {
     expenses.length > 0
       ? Math.max(
           ...expenses.map(
-            (expense) =>
-              expense.amount
+            (expense) => expense.amount
           )
         )
       : 0;
 
-  const categoryTotals =
-    expenses.reduce(
-      (acc: any, expense) => {
+  const categoryTotals = expenses.reduce(
+    (acc: any, expense) => {
 
-        const existing = acc.find(
-          (item: any) =>
-            item.name ===
-            expense.category
-        );
-
-        if (existing) {
-
-          existing.value +=
-            expense.amount;
-
-        } else {
-
-          acc.push({
-            name:
-              expense.category,
-            value:
-              expense.amount,
-          });
-        }
-
-        return acc;
-
-      },
-      []
-    );
-
-  const filteredExpenses =
-    useMemo(() => {
-
-      return expenses.filter(
-        (expense) => {
-
-          const matchesSearch =
-            expense.title
-              .toLowerCase()
-              .includes(
-                search.toLowerCase()
-              );
-
-          const matchesCategory =
-            filterCategory ===
-            "All"
-              ? true
-              : expense.category ===
-                filterCategory;
-
-          return (
-            matchesSearch &&
-            matchesCategory
-          );
-        }
+      const existing = acc.find(
+        (item: any) =>
+          item.name === expense.category
       );
 
-    }, [
-      expenses,
-      search,
-      filterCategory,
-    ]);
+      if (existing) {
 
-  if (!user) {
+        existing.value += expense.amount;
 
-    return (
+      } else {
 
-      <main className="min-h-screen bg-black text-white flex items-center justify-center p-6">
+        acc.push({
+          name: expense.category,
+          value: expense.amount,
+        });
+      }
 
-        <div className="bg-zinc-900 p-8 rounded-3xl w-full max-w-md border border-zinc-800">
+      return acc;
 
-          <h1 className="text-4xl font-black mb-8 text-center">
+    },
+    []
+  );
 
-            Arya Spendzzz
+  const filteredExpenses = useMemo(() => {
 
-          </h1>
+    return expenses.filter((expense) => {
 
-          <div className="space-y-4">
+      const matchesSearch =
+        expense.title
+          .toLowerCase()
+          .includes(search.toLowerCase());
 
-            <input
-              type="email"
-              placeholder="Email"
-              value={email}
-              onChange={(e) =>
-                setEmail(
-                  e.target.value
-                )
-              }
-              className="w-full bg-zinc-800 p-4 rounded-xl outline-none"
-            />
+      const matchesCategory =
+        filterCategory === "All"
+          ? true
+          : expense.category ===
+            filterCategory;
 
-            <input
-              type="password"
-              placeholder="Password"
-              value={password}
-              onChange={(e) =>
-                setPassword(
-                  e.target.value
-                )
-              }
-              className="w-full bg-zinc-800 p-4 rounded-xl outline-none"
-            />
+      return (
+        matchesSearch &&
+        matchesCategory
+      );
+    });
 
-            <button
-              onClick={signIn}
-              className="w-full bg-white text-black p-4 rounded-xl font-bold"
-            >
-              Login
-            </button>
+  }, [
+    expenses,
+    search,
+    filterCategory,
+  ]);
 
-            <button
-              onClick={signUp}
-              className="w-full bg-green-500 p-4 rounded-xl font-bold"
-            >
-              Create Account
-            </button>
+  const exportCSV = () => {
 
-          </div>
+    const headers =
+      "Title,Amount,Category,Date\n";
 
-        </div>
+    const rows = expenses
+      .map(
+        (e) =>
+          `${e.title},${e.amount},${e.category},${e.date}`
+      )
+      .join("\n");
 
-      </main>
+    const csvContent =
+      headers + rows;
+
+    const blob = new Blob(
+      [csvContent],
+      {
+        type: "text/csv",
+      }
     );
-  }
+
+    const url =
+      window.URL.createObjectURL(blob);
+
+    const a =
+      document.createElement("a");
+
+    a.href = url;
+
+    a.download = "expenses.csv";
+
+    a.click();
+
+    toast.success("CSV exported");
+  };
 
   return (
 
-    <main className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-zinc-900 text-white p-8">
+    <main className="min-h-screen bg-gradient-to-br from-black via-zinc-950 to-zinc-900 text-white p-4 md:p-8">
+
+      <Toaster position="top-right" />
 
       <div className="max-w-7xl mx-auto">
 
-        <div className="flex justify-between items-center mb-10">
+        <div className="flex flex-col md:flex-row md:items-center md:justify-between mb-10 gap-6">
 
           <div>
 
-            <h1 className="text-5xl font-black mb-2">
+            <h1 className="text-4xl md:text-5xl font-black mb-2">
               Arya Spendzzz
             </h1>
 
-            <p className="text-zinc-400 text-lg">
+            <p className="text-zinc-400">
               Smart Personal Finance Dashboard
             </p>
 
           </div>
 
-          <button
-            onClick={signOut}
-            className="bg-red-500 px-5 py-3 rounded-xl font-bold"
-          >
-            Logout
-          </button>
+          <div className="flex flex-col md:flex-row gap-4">
 
-        </div>
+            <div>
 
-        <div className="mb-10">
+              <label className="text-zinc-400 block mb-2">
+                Monthly Income
+              </label>
 
-          <label className="text-zinc-400 block mb-3">
+              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-4 py-3 rounded-2xl">
 
-            Monthly Income
+                <IndianRupee size={18} />
 
-          </label>
+                <input
+                  type="number"
+                  value={income}
+                  onChange={(e) =>
+                    setIncome(
+                      Number(e.target.value)
+                    )
+                  }
+                  className="bg-transparent outline-none text-xl font-bold w-[120px]"
+                />
 
-          <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-4 py-3 rounded-2xl max-w-sm">
+              </div>
 
-            <IndianRupee size={18} />
+            </div>
 
-            <input
-              type="number"
-              value={income}
-              onChange={async (e) => {
+            <div>
 
-                const value =
-                  Number(
-                    e.target.value
-                  );
+              <label className="text-zinc-400 block mb-2">
+                Monthly Budget
+              </label>
 
-                setIncome(value);
+              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-4 py-3 rounded-2xl">
 
-                await supabase
-                  .from(
-                    "profiles"
-                  )
-                  .update({
-                    income: value,
-                  })
-                  .eq(
-                    "id",
-                    user.id
-                  );
-              }}
-              className="bg-transparent outline-none text-xl font-bold w-full"
-            />
+                <IndianRupee size={18} />
+
+                <input
+                  type="number"
+                  value={budget}
+                  onChange={(e) =>
+                    setBudget(
+                      Number(e.target.value)
+                    )
+                  }
+                  className="bg-transparent outline-none text-xl font-bold w-[120px]"
+                />
+
+              </div>
+
+            </div>
 
           </div>
 
@@ -443,69 +388,64 @@ export default function Home() {
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-10">
 
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
+          <Card
+            title="Income"
+            value={income}
+            color="text-green-400"
+          />
 
-            <h2 className="text-zinc-400 mb-3">
+          <Card
+            title="Expenses"
+            value={totalExpenses}
+            color="text-red-400"
+          />
 
-              Income
+          <Card
+            title="Savings"
+            value={savings}
+            color="text-blue-400"
+          />
 
-            </h2>
+          <Card
+            title="Highest Expense"
+            value={highestExpense}
+            color="text-yellow-400"
+          />
 
-            <p className="text-4xl font-black text-green-400">
+        </div>
 
-              ₹{income}
+        <div className="mb-8">
 
-            </p>
+          <div className="w-full bg-zinc-800 rounded-full h-4 overflow-hidden">
 
-          </div>
-
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
-
-            <h2 className="text-zinc-400 mb-3">
-
-              Expenses
-
-            </h2>
-
-            <p className="text-4xl font-black text-red-400">
-
-              ₹{totalExpenses}
-
-            </p>
-
-          </div>
-
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
-
-            <h2 className="text-zinc-400 mb-3">
-
-              Savings
-
-            </h2>
-
-            <p className="text-4xl font-black text-blue-400">
-
-              ₹{savings}
-
-            </p>
-
-          </div>
-
-          <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
-
-            <h2 className="text-zinc-400 mb-3">
-
-              Highest Expense
-
-            </h2>
-
-            <p className="text-4xl font-black text-yellow-400">
-
-              ₹{highestExpense}
-
-            </p>
+            <div
+              className={`h-full ${
+                totalExpenses > budget
+                  ? "bg-red-500"
+                  : "bg-green-500"
+              }`}
+              style={{
+                width: `${Math.min(
+                  (totalExpenses / budget) *
+                    100,
+                  100
+                )}%`,
+              }}
+            />
 
           </div>
+
+          <p className="text-zinc-400 mt-2">
+
+            Budget Used:
+            {" "}
+            ₹{totalExpenses}
+            {" "}
+            /
+            {" "}
+            ₹{budget}
+
+          </p>
 
         </div>
 
@@ -526,9 +466,7 @@ export default function Home() {
               placeholder="Expense title"
               value={title}
               onChange={(e) =>
-                setTitle(
-                  e.target.value
-                )
+                setTitle(e.target.value)
               }
               className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl outline-none"
             />
@@ -538,9 +476,7 @@ export default function Home() {
               placeholder="Amount"
               value={amount}
               onChange={(e) =>
-                setAmount(
-                  e.target.value
-                )
+                setAmount(e.target.value)
               }
               className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl outline-none"
             />
@@ -548,9 +484,7 @@ export default function Home() {
             <select
               value={category}
               onChange={(e) =>
-                setCategory(
-                  e.target.value
-                )
+                setCategory(e.target.value)
               }
               className="bg-zinc-900 border border-zinc-700 p-3 rounded-xl outline-none"
             >
@@ -582,9 +516,7 @@ export default function Home() {
           <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
 
             <h2 className="text-2xl font-bold mb-6">
-
               Expense Analytics
-
             </h2>
 
             <div className="h-[350px]">
@@ -637,80 +569,141 @@ export default function Home() {
 
           <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
 
-            <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+            <h2 className="text-2xl font-bold mb-6">
+              Expense Breakdown
+            </h2>
 
-              <h2 className="text-2xl font-bold">
+            <div className="h-[350px]">
 
-                Recent Expenses
+              <ResponsiveContainer
+                width="100%"
+                height="100%"
+              >
 
-              </h2>
+                <BarChart
+                  data={categoryTotals}
+                >
 
-              <div className="flex gap-3">
-
-                <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-3 rounded-xl">
-
-                  <Search size={18} />
-
-                  <input
-                    type="text"
-                    placeholder="Search"
-                    value={search}
-                    onChange={(e) =>
-                      setSearch(
-                        e.target.value
-                      )
-                    }
-                    className="bg-transparent outline-none py-2"
+                  <CartesianGrid
+                    strokeDasharray="3 3"
                   />
 
-                </div>
+                  <XAxis dataKey="name" />
 
-                <select
-                  value={filterCategory}
-                  onChange={(e) =>
-                    setFilterCategory(
-                      e.target.value
-                    )
-                  }
-                  className="bg-zinc-900 border border-zinc-700 px-3 rounded-xl"
-                >
-                  <option>All</option>
-                  <option>Food</option>
-                  <option>Travel</option>
-                  <option>Shopping</option>
-                  <option>Bills</option>
-                  <option>Entertainment</option>
-                  <option>Health</option>
-                </select>
+                  <YAxis />
 
-              </div>
+                  <Tooltip />
+
+                  <Bar
+                    dataKey="value"
+                    fill="#3b82f6"
+                  />
+
+                </BarChart>
+
+              </ResponsiveContainer>
 
             </div>
 
-            <div className="space-y-4 max-h-[400px] overflow-auto pr-2">
+          </div>
 
-              {filteredExpenses.map(
-                (expense, index) => (
+        </div>
+
+        <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
+
+          <div className="flex flex-col md:flex-row md:items-center md:justify-between gap-4 mb-6">
+
+            <h2 className="text-2xl font-bold">
+              Recent Expenses
+            </h2>
+
+            <div className="flex flex-col md:flex-row gap-3">
+
+              <div className="flex items-center gap-2 bg-zinc-900 border border-zinc-700 px-3 rounded-xl">
+
+                <Search size={18} />
+
+                <input
+                  type="text"
+                  placeholder="Search"
+                  value={search}
+                  onChange={(e) =>
+                    setSearch(
+                      e.target.value
+                    )
+                  }
+                  className="bg-transparent outline-none py-2"
+                />
+
+              </div>
+
+              <select
+                value={filterCategory}
+                onChange={(e) =>
+                  setFilterCategory(
+                    e.target.value
+                  )
+                }
+                className="bg-zinc-900 border border-zinc-700 px-3 rounded-xl"
+              >
+                <option>All</option>
+                <option>Food</option>
+                <option>Travel</option>
+                <option>Shopping</option>
+                <option>Bills</option>
+                <option>Entertainment</option>
+                <option>Health</option>
+              </select>
+
+              <button
+                onClick={exportCSV}
+                className="bg-green-500 px-4 rounded-xl font-bold flex items-center gap-2"
+              >
+
+                <Download size={18} />
+
+                Export
+
+              </button>
+
+            </div>
+
+          </div>
+
+          <div className="space-y-4 max-h-[500px] overflow-auto pr-2">
+
+            {loading ? (
+
+              <p className="text-zinc-400">
+                Loading...
+              </p>
+
+            ) : filteredExpenses.length === 0 ? (
+
+              <p className="text-zinc-500">
+                No expenses found
+              </p>
+
+            ) : (
+
+              filteredExpenses.map(
+                (expense) => (
 
                   <div
-                    key={index}
-                    className="flex justify-between items-center bg-zinc-900/70 border border-zinc-800 p-4 rounded-2xl"
+                    key={expense.id}
+                    className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 bg-zinc-900/70 border border-zinc-800 p-4 rounded-2xl"
                   >
 
                     <div>
 
                       <p className="text-lg font-semibold">
-
                         {expense.title}
-
                       </p>
 
                       <div className="flex items-center gap-3 text-sm text-zinc-400 mt-1">
 
                         <span>
-
                           {expense.category}
-
                         </span>
 
                         <span className="flex items-center gap-1">
@@ -728,16 +721,12 @@ export default function Home() {
                     <div className="flex items-center gap-3">
 
                       <p className="text-red-400 font-bold text-lg">
-
                         ₹{expense.amount}
-
                       </p>
 
                       <button
                         onClick={() =>
-                          editExpense(
-                            expense
-                          )
+                          editExpense(expense)
                         }
                         className="bg-blue-500 p-2 rounded-lg hover:scale-110 transition"
                       >
@@ -747,7 +736,7 @@ export default function Home() {
                       <button
                         onClick={() =>
                           deleteExpense(
-                            expense.id
+                            expense.id || 0
                           )
                         }
                         className="bg-red-500 p-2 rounded-lg hover:scale-110 transition"
@@ -760,9 +749,9 @@ export default function Home() {
                   </div>
 
                 )
-              )}
+              )
 
-            </div>
+            )}
 
           </div>
 
@@ -771,5 +760,31 @@ export default function Home() {
       </div>
 
     </main>
+  );
+}
+
+function Card({
+  title,
+  value,
+  color,
+}: {
+  title: string;
+  value: number;
+  color: string;
+}) {
+
+  return (
+
+    <div className="backdrop-blur-xl bg-white/5 border border-white/10 p-6 rounded-3xl">
+
+      <h2 className="text-zinc-400 mb-3">
+        {title}
+      </h2>
+
+      <p className={`text-4xl font-black ${color}`}>
+        ₹{value}
+      </p>
+
+    </div>
   );
 }
